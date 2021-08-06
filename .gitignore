@@ -4,3 +4,4 @@
 A3/.ipynb_checkpoints
 A3/cifar-10-batches-py
 A3/cifar-10-python.tar.gz
+A3/*.pth
