@@ -409,18 +409,26 @@ class FullyConnectedNet(object):
         # When using dropout, you'll need to pass self.dropout_param to each       #
         # dropout forward pass.                                                    #
         ############################################################################
-
         caches = []
         x = X
         for i in range(self.num_layers):
             if i != self.num_layers - 1:
                 layer = Linear_ReLU
+                dropout_layer = Dropout if self.use_dropout else None
             else:
                 layer = Linear
+                dropout_layer = None
+
+            # Linear Layer
             x, cache = layer.forward(x, self.params[f"W{i+1}"], self.params[f"b{i+1}"])
             caches.append(cache)
-        scores = x
 
+            # Dropout Layer
+            if dropout_layer is not None:
+                x, cache = dropout_layer.forward(x, self.dropout_param)
+                caches.append(cache)
+
+        scores = x
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -449,10 +457,17 @@ class FullyConnectedNet(object):
         dx = ds
         for i in range(self.num_layers, 0, -1):
             if i == self.num_layers:
+                dropout_layer = None
                 layer = Linear
             else:
+                dropout_layer = Dropout if self.use_dropout else None
                 layer = Linear_ReLU
-            cache = caches[i - 1]
+
+            if dropout_layer is not None:
+                cache = caches.pop(-1)
+                dx = dropout_layer.backward(dx, cache)
+
+            cache = caches.pop(-1)
             dx, grads[f"W{i}"], grads[f"b{i}"] = layer.backward(dx, cache)
             grads[f"W{i}"] += 2 * self.reg * self.params[f"W{i}"]
 
@@ -577,7 +592,9 @@ def rmsprop(w, dw, config=None):
     # config['cache'].                                                        #
     ###########################################################################
 
-     
+    grad_square = config["decay_rate"] * config["cache"] + (1 - config["decay_rate"]) * dw * dw
+    next_w = w - config["learning_rate"] * dw / (grad_square.sqrt() + config["epsilon"])
+    config["cache"] = grad_square
 
     ###########################################################################
     #                             END OF YOUR CODE                            #
@@ -617,8 +634,14 @@ def adam(w, dw, config=None):
     # NOTE: In order to match the reference output, please modify t _before_    #
     # using it in any calculations.                                             #
     #############################################################################
-    # Replace "pass" statement with your code
-    pass
+
+    config["m"] = (config["beta1"] * config["m"] + (1 - config["beta1"]) * dw)
+    config["v"] = (config["beta2"] * config["v"] + (1 - config["beta2"]) * dw * dw)
+    config["t"] += 1
+    m_unbias = config["m"] / (1 - config["beta1"] ** config["t"])
+    v_unbias = config["v"] / (1 - config["beta2"] ** config["t"])
+    next_w = w - config["learning_rate"] * m_unbias / (v_unbias.sqrt() + config["epsilon"])
+
     #############################################################################
     #                              END OF YOUR CODE                             #
     #############################################################################
@@ -663,8 +686,10 @@ class Dropout(object):
             # TODO: Implement training phase forward pass for inverted dropout.       #
             # Store the dropout mask in the mask variable.                            #
             ###########################################################################
-            # Replace "pass" statement with your code
-            pass
+
+            mask = torch.rand(x.shape, dtype=torch.float32, device=x.device) > p
+            out = x * mask / (1 - p)
+
             ###########################################################################
             #                             END OF YOUR CODE                            #
             ###########################################################################
@@ -672,8 +697,9 @@ class Dropout(object):
             ###########################################################################
             # TODO: Implement the test phase forward pass for inverted dropout.       #
             ###########################################################################
-            # Replace "pass" statement with your code
-            pass
+
+            out = x
+
             ###########################################################################
             #                             END OF YOUR CODE                            #
             ###########################################################################
@@ -698,8 +724,9 @@ class Dropout(object):
             ###########################################################################
             # TODO: Implement training phase backward pass for inverted dropout       #
             ###########################################################################
-            # Replace "pass" statement with your code
-            pass
+
+            dx = dout * mask / (1 - dropout_param["p"])
+
             ###########################################################################
             #                            END OF YOUR CODE                             #
             ###########################################################################
