@@ -39,7 +39,6 @@ class Linear(object):
         # TODO: Implement the linear forward pass. Store the result in out. You     #
         # will need to reshape the input into rows.                                 #
         #############################################################################
-
         out = torch.matmul(x.view(x.shape[0], -1), w) + b
 
         #############################################################################
@@ -280,9 +279,9 @@ class TwoLayerNet(object):
                    self.reg * torch.sum(self.params["W2"] ** 2)
         loss = ce_loss + reg_loss
 
-        dh,  grads["W2"], grads["b2"] = Linear.backward(ds, fc2_cache)
+        dh, grads["W2"], grads["b2"] = Linear.backward(ds, fc2_cache)
         grads["W2"] += 2 * self.reg * self.params["W2"]
-        dx,  grads["W1"], grads["b1"] = Linear_ReLU.backward(dh, fc1_cache)
+        dx, grads["W1"], grads["b1"] = Linear_ReLU.backward(dh, fc1_cache)
         grads["W1"] += 2 * self.reg * self.params["W1"]
 
         ###########################################################################
@@ -345,9 +344,9 @@ class FullyConnectedNet(object):
 
         dims = [input_dim, *hidden_dims, num_classes]
         for i in range(self.num_layers):
-            in_dims, out_dims = dims[i:i+2]
-            self.params[f"W{i+1}"] = torch.normal(0., weight_scale, [in_dims, out_dims], dtype=dtype, device=device)
-            self.params[f"b{i+1}"] = torch.zeros([out_dims], dtype=dtype, device=device)
+            in_dims, out_dims = dims[i:i + 2]
+            self.params[f"W{i + 1}"] = torch.normal(0., weight_scale, [in_dims, out_dims], dtype=dtype, device=device)
+            self.params[f"b{i + 1}"] = torch.zeros([out_dims], dtype=dtype, device=device)
 
         ############################################################################
         #                             END OF YOUR CODE                             #
@@ -409,6 +408,7 @@ class FullyConnectedNet(object):
         # When using dropout, you'll need to pass self.dropout_param to each       #
         # dropout forward pass.                                                    #
         ############################################################################
+
         caches = []
         x = X
         for i in range(self.num_layers):
@@ -420,15 +420,15 @@ class FullyConnectedNet(object):
                 dropout_layer = None
 
             # Linear Layer
-            x, cache = layer.forward(x, self.params[f"W{i+1}"], self.params[f"b{i+1}"])
+            x, cache = layer.forward(x, self.params[f"W{i + 1}"], self.params[f"b{i + 1}"])
             caches.append(cache)
 
             # Dropout Layer
             if dropout_layer is not None:
                 x, cache = dropout_layer.forward(x, self.dropout_param)
                 caches.append(cache)
-
         scores = x
+
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -451,7 +451,7 @@ class FullyConnectedNet(object):
         # Calculate loss
         loss, ds = softmax_loss(scores, y)
         for i in range(self.num_layers):
-            loss += self.reg * torch.sum(self.params[f"W{i+1}"] ** 2)
+            loss += self.reg * torch.sum(self.params[f"W{i + 1}"] ** 2)
 
         # Calculate gradients
         dx = ds
