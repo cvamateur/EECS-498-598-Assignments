@@ -57,7 +57,7 @@ docs/_build/
 target/
 
 .idea/
-.PDF/
+PDF/
 
 A3/.ipynb_checkpoints
 A3/cifar-10-batches-py
