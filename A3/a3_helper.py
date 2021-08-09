@@ -205,8 +205,8 @@ def softmax_loss(x, y):
     log_probs = shifted_logits - Z.log()
     probs = log_probs.exp()
     N = x.shape[0]
-    loss = (-1.0 / N) * log_probs[torch.arange(N), y].sum()
+    loss = (-1.0 / N) * log_probs[torch.arange(N), y.long()].sum()
     dx = probs.clone()
-    dx[torch.arange(N), y] -= 1
+    dx[torch.arange(N), y.long()] -= 1
     dx /= N
     return loss, dx

@@ -440,10 +440,18 @@ class DeepConvNet(object):
                 in_dims *= grid_height * grid_width
                 size = [in_dims, out_dims]
                 layer_type = "Linear"
+                K = None
+                relu = False
             else:
                 size = [out_dims, in_dims, kernel_size, kernel_size]
                 layer_type = "Conv"
-            w = torch.normal(0., weight_scale, size=size, dtype=dtype, device=device)
+                K = kernel_size
+                relu = True
+
+            if weight_scale == "kaiming":
+                w = kaiming_initializer(in_dims, out_dims, K, relu, dtype=dtype, device=device)
+            else:
+                w = torch.normal(0., weight_scale, size=size, dtype=dtype, device=device)
             b = torch.zeros([out_dims], dtype=dtype, device=device)
             self.params[f"{layer_type}{i * macro_size + 1}.w"] = w
             self.params[f"{layer_type}{i * macro_size + 1}.b"] = b
@@ -581,6 +589,7 @@ class DeepConvNet(object):
 
             w = self.params[f"{layer_name}{i * macro_size + 1}.w"]
             b = self.params[f"{layer_name}{i * macro_size + 1}.b"]
+
             x, cache = layer.forward(x, w, b, *args)
             caches.append(cache)
 
@@ -671,16 +680,28 @@ def create_convolutional_solver_instance(data_dict, dtype, device):
     ################################################################################
     # TODO: Train the best DeepConvNet that you can on CIFAR-10 within 60 seconds. #
     ################################################################################
-    # Replace "pass" statement with your code
-    pass
+
+    input_dims = data_dict["X_train"].shape[1:]
+    num_filters = [16, 32, 64, 128]
+    max_pools = [0, 1, 2, 3]
+    model = DeepConvNet(input_dims, num_filters, max_pools, weight_scale="kaiming", dtype=dtype, device=device)
+
+    optim_config = {"learning_rate": 3e-3}
+    solver = Solver(model, data_dict,
+                    optim_config=optim_config,
+                    batch_size=128,
+                    lr_decay=0.9,
+                    num_epochs=25,
+                    device=device,
+                    update_rule=adam)
+
     ################################################################################
     #                              END OF YOUR CODE                                #
     ################################################################################
     return solver
 
 
-def kaiming_initializer(Din, Dout, K=None, relu=True, device='cpu',
-                        dtype=torch.float32):
+def kaiming_initializer(Din, Dout, K=None, relu=True, device='cpu', dtype=torch.float32):
     """
     Implement Kaiming initialization for linear and convolution layers.
 
@@ -711,8 +732,10 @@ def kaiming_initializer(Din, Dout, K=None, relu=True, device='cpu',
         # and fan_in = num_in_channels (= Din).                                   #
         # The output should be a tensor in the designated size, dtype, and device.#
         ###########################################################################
-        # Replace "pass" statement with your code
-        pass
+
+        weight_scale = torch.tensor(gain / Din).sqrt()
+        weight = weight_scale * torch.randn([Din, Dout], dtype=dtype, device=device)
+
         ###########################################################################
         #                            END OF YOUR CODE                             #
         ###########################################################################
@@ -724,8 +747,10 @@ def kaiming_initializer(Din, Dout, K=None, relu=True, device='cpu',
         # and fan_in = num_in_channels (= Din) * K * K                            #
         # The output should be a tensor in the designated size, dtype, and device.#
         ###########################################################################
-        # Replace "pass" statement with your code
-        pass
+
+        weight_scale = torch.tensor(gain / (Din * K * K)).sqrt()
+        weight = weight_scale * torch.randn([Dout, Din, K, K], dtype=dtype, device=device)
+
         ###########################################################################
         #                            END OF YOUR CODE                             #
         ###########################################################################
@@ -804,8 +829,49 @@ class BatchNorm(object):
             # Referencing the original paper (https://arxiv.org/abs/1502.03167)   #
             # might prove to be helpful.                                          #
             #######################################################################
-            # Replace "pass" statement with your code
-            pass
+
+            # sample_mean = torch.mean(x, dim=0)
+            # sample_var = torch.var(x, dim=0)
+            # running_mean = momentum * running_mean + (1 - momentum) * sample_mean
+            # running_var = momentum * running_var + (1 - momentum) * sample_var
+            #
+            # inv_std = 1. / torch.sqrt(sample_var + eps)
+            # y = (x - sample_mean) * inv_std
+            # out = gamma * y + beta
+            # cache = (y, gamma, inv_std)
+
+            N, D = x.shape
+
+            # step1: calculate mean
+            mu = 1. / N * torch.sum(x, dim=0)
+
+            # step2: subtract mean vector of every trainings example
+            xmu = x - mu
+
+            # step3: following the lower branch - calculation denominator
+            sq = xmu ** 2
+
+            # step4: calculate variance
+            var = 1. / N * torch.sum(sq, dim=0)
+
+            # step5: add eps for numerical stability, then sqrt
+            sqrtvar = torch.sqrt(var + eps)
+
+            # step6: invert sqrtwar
+            ivar = 1. / sqrtvar
+
+            # step7: execute normalization
+            xhat = xmu * ivar
+
+            # step8: Nor the two transformation steps
+            gammax = gamma * xhat
+
+            # step9
+            out = gammax + beta
+
+            # store intermediate
+            cache = (xhat, gamma, xmu, ivar, sqrtvar, var, eps)
+
             #######################################################################
             #                           END OF YOUR CODE                          #
             #######################################################################
@@ -816,8 +882,10 @@ class BatchNorm(object):
             # then scale and shift the normalized data using gamma and beta.      #
             # Store the result in the out variable.                               #
             #######################################################################
-            # Replace "pass" statement with your code
-            pass
+
+            y = (x - running_mean) / torch.sqrt(running_var + eps)
+            out = gamma * y + beta
+
             #######################################################################
             #                           END OF YOUR CODE                          #
             #######################################################################
@@ -856,8 +924,56 @@ class BatchNorm(object):
         # might prove to be helpful.                                              #
         # Don't forget to implement train and test mode separately.               #
         ###########################################################################
-        # Replace "pass" statement with your code
-        pass
+
+        # y, gamma, inv_std = cache
+        # N, _ = dout.shape
+        #
+        # dy = dout * gamma
+        # dx = 1. / N * inv_std * (N * dy - torch.sum(dy, dim=0) - y * torch.sum(dy * y, dim=0))
+        #
+        # dbeta = torch.sum(dout, dim=0)
+        # dgamma = torch.sum(dout * y, dim=0)
+
+        # unfold the variables stored in cache
+        xhat, gamma, xmu, ivar, sqrtvar, var, eps = cache
+
+        # get the dimensions of the input/output
+        N, D = dout.shape
+
+        # step9
+        dbeta = torch.sum(dout, dim=0)
+        dgammax = dout  # not necessary, but more understandable
+
+        # step8
+        dgamma = torch.sum(dgammax * xhat, dim=0)
+        dxhat = dgammax * gamma
+
+        # step7
+        divar = torch.sum(dxhat * xmu, dim=0)
+        dxmu1 = dxhat * ivar
+
+        # step6
+        dsqrtvar = -1. / (sqrtvar ** 2) * divar
+
+        # step5
+        dvar = 0.5 * 1. / torch.sqrt(var + eps) * dsqrtvar
+
+        # step4
+        dsq = 1. / N * torch.ones((N, D), device=xhat.device) * dvar
+
+        # step3
+        dxmu2 = 2 * xmu * dsq
+
+        # step2
+        dx1 = (dxmu1 + dxmu2)
+        dmu = -1 * torch.sum(dxmu1 + dxmu2, dim=0)
+
+        # step1
+        dx2 = 1. / N * torch.ones((N, D), device=xhat.device) * dmu
+
+        # step0
+        dx = dx1 + dx2
+
         ###########################################################################
         #                             END OF YOUR CODE                            #
         ###########################################################################
