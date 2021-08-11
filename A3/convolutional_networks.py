@@ -456,9 +456,9 @@ class DeepConvNet(object):
             self.params[f"{layer_type}{i * macro_size + 1}.w"] = w
             self.params[f"{layer_type}{i * macro_size + 1}.b"] = b
 
-            if batchnorm:
-                gamma = torch.ones([in_dims], dtype=dtype, device=device).view(1, -1, 1, 1)
-                beta = torch.zeros([in_dims], dtype=dtype, device=device).view(1, -1, 1, 1)
+            if batchnorm and i != self.num_layers - 1:
+                gamma = torch.ones([out_dims], dtype=dtype, device=device)
+                beta = torch.zeros([out_dims], dtype=dtype, device=device)
                 self.params[f"BN{i * macro_size + 2}.gamma"] = gamma
                 self.params[f"BN{i * macro_size + 2}.beta"] = beta
 
@@ -589,7 +589,7 @@ class DeepConvNet(object):
 
             w = self.params[f"{layer_name}{i * macro_size + 1}.w"]
             b = self.params[f"{layer_name}{i * macro_size + 1}.b"]
-
+            
             x, cache = layer.forward(x, w, b, *args)
             caches.append(cache)
 
@@ -638,8 +638,8 @@ class DeepConvNet(object):
                     else:
                         layer = Conv_BatchNorm_ReLU
                     dx, dw, db, dgamma, dbeta = layer.backward(dx, cache)
-                    grads[f"BN{(i - 1) * macro_size + 1}.gamma"] = dgamma
-                    grads[f"BN{(i - 1) * macro_size + 1}.beta"] = dbeta
+                    grads[f"BN{(i - 1) * macro_size + 2}.gamma"] = dgamma
+                    grads[f"BN{(i - 1) * macro_size + 2}.beta"] = dbeta
                 else:
                     if (i - 1) in self.max_pools:
                         layer = Conv_ReLU_Pool
@@ -691,7 +691,7 @@ def create_convolutional_solver_instance(data_dict, dtype, device):
                     optim_config=optim_config,
                     batch_size=128,
                     lr_decay=0.9,
-                    num_epochs=25,
+                    num_epochs=15,
                     device=device,
                     update_rule=adam)
 
@@ -829,49 +829,39 @@ class BatchNorm(object):
             # Referencing the original paper (https://arxiv.org/abs/1502.03167)   #
             # might prove to be helpful.                                          #
             #######################################################################
-
-            # sample_mean = torch.mean(x, dim=0)
-            # sample_var = torch.var(x, dim=0)
-            # running_mean = momentum * running_mean + (1 - momentum) * sample_mean
-            # running_var = momentum * running_var + (1 - momentum) * sample_var
-            #
-            # inv_std = 1. / torch.sqrt(sample_var + eps)
-            # y = (x - sample_mean) * inv_std
-            # out = gamma * y + beta
-            # cache = (y, gamma, inv_std)
-
-            N, D = x.shape
-
-            # step1: calculate mean
+            
+            # Step1: caclculate mean
             mu = 1. / N * torch.sum(x, dim=0)
-
-            # step2: subtract mean vector of every trainings example
+            
+            # Step2: subtract mean
             xmu = x - mu
-
-            # step3: following the lower branch - calculation denominator
+            
+            # Step3: squar xmu
             sq = xmu ** 2
-
-            # step4: calculate variance
+            
+            # Step4: caclculate mean of sq --> var
             var = 1. / N * torch.sum(sq, dim=0)
-
-            # step5: add eps for numerical stability, then sqrt
+            
+            # Step5: add eps for numerical stability
             sqrtvar = torch.sqrt(var + eps)
-
-            # step6: invert sqrtwar
+            
+            # Step6: invert sqrtvar
             ivar = 1. / sqrtvar
-
-            # step7: execute normalization
+            
+            # Step7: xhat
             xhat = xmu * ivar
-
-            # step8: Nor the two transformation steps
-            gammax = gamma * xhat
-
-            # step9
-            out = gammax + beta
-
-            # store intermediate
-            cache = (xhat, gamma, xmu, ivar, sqrtvar, var, eps)
-
+            
+            # Step8: scale xhat
+            gammaxhat = gamma * xhat
+            
+            # Step9: shift gammax
+            out = gammaxhat + beta
+            
+            cache = (xhat, gamma, ivar, sqrtvar, xmu)
+            
+            running_mean = momentum * running_mean + (1 - momentum) * mu
+            running_var = momentum * running_var + (1 - momentum) * var
+            
             #######################################################################
             #                           END OF YOUR CODE                          #
             #######################################################################
@@ -924,56 +914,43 @@ class BatchNorm(object):
         # might prove to be helpful.                                              #
         # Don't forget to implement train and test mode separately.               #
         ###########################################################################
+        
+        # Refer to [Link](https://kratzert.github.io/2016/02/12/understanding-the-gradient-flow-through-the-batch-normalization-layer.html) for more details
 
-        # y, gamma, inv_std = cache
-        # N, _ = dout.shape
-        #
-        # dy = dout * gamma
-        # dx = 1. / N * inv_std * (N * dy - torch.sum(dy, dim=0) - y * torch.sum(dy * y, dim=0))
-        #
-        # dbeta = torch.sum(dout, dim=0)
-        # dgamma = torch.sum(dout * y, dim=0)
-
-        # unfold the variables stored in cache
-        xhat, gamma, xmu, ivar, sqrtvar, var, eps = cache
-
-        # get the dimensions of the input/output
-        N, D = dout.shape
-
-        # step9
+        xhat, gamma, ivar, sqrtvar, xmu = cache
+        N = dout.shape[0]
+        
+        # Step9:
         dbeta = torch.sum(dout, dim=0)
-        dgammax = dout  # not necessary, but more understandable
-
-        # step8
-        dgamma = torch.sum(dgammax * xhat, dim=0)
-        dxhat = dgammax * gamma
-
-        # step7
+        dgammaxhat = dout
+        
+        # Step8:
+        dgamma = torch.sum(dgammaxhat * xhat, dim=0)
+        dxhat = dgammaxhat * gamma
+        
+        # Step7:
         divar = torch.sum(dxhat * xmu, dim=0)
-        dxmu1 = dxhat * ivar
-
-        # step6
-        dsqrtvar = -1. / (sqrtvar ** 2) * divar
-
-        # step5
-        dvar = 0.5 * 1. / torch.sqrt(var + eps) * dsqrtvar
-
-        # step4
-        dsq = 1. / N * torch.ones((N, D), device=xhat.device) * dvar
-
-        # step3
-        dxmu2 = 2 * xmu * dsq
-
-        # step2
-        dx1 = (dxmu1 + dxmu2)
-        dmu = -1 * torch.sum(dxmu1 + dxmu2, dim=0)
-
-        # step1
-        dx2 = 1. / N * torch.ones((N, D), device=xhat.device) * dmu
-
-        # step0
-        dx = dx1 + dx2
-
+        dxmu = dxhat * ivar
+        
+        # Step6:
+        dsqrtvar = divar * (-1. / sqrtvar ** 2)
+        
+        # Step5:
+        dvar = dsqrtvar * (0.5 / sqrtvar)
+        
+        # Step4:
+        dsq = dvar * (1. / N)
+        
+        # Step3:
+        dxmu += dsq * 2. * xmu
+        
+        # Step2:
+        dmu = -1. * torch.sum(dxmu, dim=0)
+        dx = dxmu
+        
+        # Step1:
+        dx += dmu * (1. / N)
+    
         ###########################################################################
         #                             END OF YOUR CODE                            #
         ###########################################################################
@@ -1003,8 +980,14 @@ class BatchNorm(object):
         # should be able to compute gradients with respect to the inputs in a     #
         # single statement; our implementation fits on a single 80-character line.#
         ###########################################################################
-        # Replace "pass" statement with your code
-        pass
+
+        xhat, gamma, ivar, *_ = cache
+        
+        dbeta = torch.sum(dout, dim=0)
+        dgamma = torch.sum(dout * xhat, dim=0)
+        dy = dout * gamma
+        dx = ivar * (dy - torch.mean(dy, dim=0) - xhat * torch.mean(dy * xhat, dim=0))
+        
         ###########################################################################
         #                             END OF YOUR CODE                            #
         ###########################################################################
@@ -1046,8 +1029,12 @@ class SpatialBatchNorm(object):
         # vanilla version of batch normalization you implemented above.           #
         # Your implementation should be very short; ours is less than five lines. #
         ###########################################################################
-        # Replace "pass" statement with your code
-        pass
+        
+        N, C, H, W = x.shape
+        x_flat = x.permute(0, 2, 3, 1).contiguous().view(N*H*W, C)
+        out, cache = BatchNorm.forward(x_flat, gamma, beta, bn_param)
+        out = out.view(N, H, W, C).permute(0, 3, 1, 2).contiguous()
+        
         ###########################################################################
         #                             END OF YOUR CODE                            #
         ###########################################################################
@@ -1075,8 +1062,12 @@ class SpatialBatchNorm(object):
         # vanilla version of batch normalization you implemented above.           #
         # Your implementation should be very short; ours is less than five lines. #
         ###########################################################################
-        # Replace "pass" statement with your code
-        pass
+        
+        N, C, H, W = dout.shape
+        dout = dout.permute(0, 2, 3, 1).contiguous().view(N*H*W, C)
+        dx, dgamma, dbeta = BatchNorm.backward_alt(dout, cache)
+        dx = dx.view(N, H, W, C).permute(0, 3, 1, 2).contiguous()
+        
         ###########################################################################
         #                             END OF YOUR CODE                            #
         ###########################################################################
