@@ -59,9 +59,14 @@ target/
 # Jupyter
 .ipynb_checkpoints
 
+# Pycharm
 .idea/
-PDF/
 
-A3/cifar-10-batches-py
-A3/cifar-10-python.tar.gz
-A3/*.pth
+# Others
+PDF/
+cifar-10-batches-py
+*.tar.gz
+*.pth
+*.tar
+
+A5/mAP
