@@ -70,3 +70,5 @@ cifar-10-batches-py
 *.tar
 
 A5/mAP
+VOCdevkit
+extracted.txt
