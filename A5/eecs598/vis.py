@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import torch
 from torchvision.utils import make_grid
 
-
 """
 Utilities to help with visualizing images and other data
 """
@@ -55,6 +54,7 @@ def visualize_dataset(X_data, y_data, samples_per_class, class_list):
     img = make_grid(samples, nrow=samples_per_class)
     return tensor_to_image(img)
 
+
 def detection_visualizer(img, idx_to_class, bbox=None, pred=None):
     """
     Data visualizer on the original image. Support both GT box input and proposal input.
@@ -74,25 +74,29 @@ def detection_visualizer(img, idx_to_class, bbox=None, pred=None):
     if bbox is not None:
         for bbox_idx in range(bbox.shape[0]):
             one_bbox = bbox[bbox_idx][:4]
-            cv2.rectangle(img_copy, (one_bbox[0], one_bbox[1]), (one_bbox[2],
-                        one_bbox[3]), (255, 0, 0), 2)
-            if bbox.shape[1] > 4: # if class info provided
+            cv2.rectangle(img_copy,
+                          (int(one_bbox[0]), int(one_bbox[1])),
+                          (int(one_bbox[2]), int(one_bbox[3])),
+                          (255, 0, 0), 2)
+            if bbox.shape[1] > 4:  # if class info provided
                 obj_cls = idx_to_class[bbox[bbox_idx][4].item()]
-                cv2.putText(img_copy, '%s' % (obj_cls),
-                          (one_bbox[0], one_bbox[1]+15),
-                          cv2.FONT_HERSHEY_PLAIN, 1.0, (0, 0, 255), thickness=1)
+                cv2.putText(img_copy, '%s' % obj_cls,
+                            (int(one_bbox[0]), int(one_bbox[1]) + 15),
+                            cv2.FONT_HERSHEY_PLAIN, 1.0, (0, 0, 255), thickness=1)
 
     if pred is not None:
         for bbox_idx in range(pred.shape[0]):
             one_bbox = pred[bbox_idx][:4]
-            cv2.rectangle(img_copy, (one_bbox[0], one_bbox[1]), (one_bbox[2],
-                        one_bbox[3]), (0, 255, 0), 2)
-            
-            if pred.shape[1] > 4: # if class and conf score info provided
+            cv2.rectangle(img_copy,
+                          (int(one_bbox[0]), int(one_bbox[1])),
+                          (int(one_bbox[2]), int(one_bbox[3])),
+                          (0, 255, 0), 2)
+
+            if pred.shape[1] > 4:  # if class and conf score info provided
                 obj_cls = idx_to_class[pred[bbox_idx][4].item()]
                 conf_score = pred[bbox_idx][5].item()
                 cv2.putText(img_copy, '%s, %.2f' % (obj_cls, conf_score),
-                            (one_bbox[0], one_bbox[1]+15),
+                            (int(one_bbox[0]), int(one_bbox[1]) + 15),
                             cv2.FONT_HERSHEY_PLAIN, 1.0, (0, 0, 255), thickness=1)
 
     plt.imshow(img_copy)
